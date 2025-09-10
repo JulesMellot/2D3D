@@ -1,0 +1,17 @@
+{
+    "depth_profile": "balanced",
+    "depth_model": "MiDaS",
+    "baseline": 0.05,
+    "focal_length": 1000,
+    "shift_direction": "horizontal",
+    "preserve_colors": true,
+    "temporal_smoothing": true,
+    "temporal_smoothing_factor": 0.1,
+    "post_process": false,
+    "max_dimension": null,
+    "batch_size": 1,
+    "gpu_acceleration": true,
+    "default_format": "sbs",
+    "crf": 18,
+    "preset": "medium"
+}
