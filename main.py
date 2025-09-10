@@ -5,6 +5,7 @@ Main entry point for the 2D3D application.
 import argparse
 import os
 import sys
+import tempfile
 
 def main():
     parser = argparse.ArgumentParser(description="Convert 2D videos to stereoscopic 3D with quality preservation")
@@ -18,6 +19,11 @@ def main():
                         default="sbs", help="Stereo format")
     parser.add_argument("-m", "--max-dimension", type=int, 
                         help="Maximum dimension for processing (to reduce memory usage)")
+    parser.add_argument("--output-resolution", nargs=2, type=int, metavar=("WIDTH", "HEIGHT"),
+                        help="Output resolution for each eye (width height)")
+    parser.add_argument("--no-auto-settings", action="store_true", 
+                        help="Disable automatic settings detection based on video properties")
+    parser.add_argument("--temp-dir", help="Temporary directory for processing files")
     parser.add_argument("--gui", action="store_true", help="Launch GUI application")
     
     args = parser.parse_args()
@@ -66,12 +72,26 @@ def main():
             focal_length=args.focal_length
         )
         
+        # Set temp directory if specified
+        if args.temp_dir:
+            # Verify temp directory exists
+            if not os.path.exists(args.temp_dir):
+                print(f"Error: Temporary directory '{args.temp_dir}' does not exist")
+                return 1
+            if not os.path.isdir(args.temp_dir):
+                print(f"Error: '{args.temp_dir}' is not a directory")
+                return 1
+            # Set the temp directory for the pipeline
+            tempfile.tempdir = args.temp_dir
+        
         # Convert video
         pipeline.convert_video(
             args.input, 
             output_path, 
             format=args.format,
-            max_dimension=args.max_dimension
+            max_dimension=args.max_dimension,
+            output_resolution=tuple(args.output_resolution) if args.output_resolution else None,
+            auto_settings=not args.no_auto_settings
         )
         
         print("Conversion completed successfully!")

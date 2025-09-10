@@ -33,12 +33,17 @@ class QualityPreservingPipeline:
         self.previous_depth = None
         self.smoothing_factor = 0.1  # Low smoothing to preserve details
         
+        # Default output resolution
+        from utils.config import get_config
+        config = get_config()
+        self.default_resolution = config.get("default_resolution", [960, 1080])
+        
         # Initialize depth estimator (using improved method that works)
         from depth_estimation.improved import DepthEstimator
         self.depth_estimator = DepthEstimator(profile=self.depth_profile)
         self.depth_method = "improved"
     
-    def convert_video(self, input_path, output_path, format="sbs", max_dimension=None):
+    def convert_video(self, input_path, output_path, format="sbs", max_dimension=None, output_resolution=None, auto_settings=True, progress_callback=None):
         """
         Convert a 2D video to stereoscopic 3D while preserving quality.
         
@@ -47,6 +52,9 @@ class QualityPreservingPipeline:
             output_path (str): Path to output video
             format (str): Stereo format ("sbs", "tb", "anaglyph")
             max_dimension (int): Maximum dimension for processing (None for original size)
+            output_resolution (tuple): Output resolution as (width, height) for each eye
+            auto_settings (bool): Automatically detect and configure settings based on video properties
+            progress_callback (callable): Function to call with progress updates (optional)
         """
         print(f"Converting {input_path} to {format} stereo format")
         print(f"Depth method: {self.depth_method}, Profile: {self.depth_profile}")
@@ -57,6 +65,22 @@ class QualityPreservingPipeline:
         processed_dir = os.path.join(temp_dir, "processed")
         
         try:
+            # If auto_settings is enabled, detect optimal settings based on video properties
+            if auto_settings:
+                from utils.video_analysis import get_optimal_3d_settings
+                optimal_settings = get_optimal_3d_settings(input_path, format, "balanced")
+                
+                # Apply optimal settings
+                eye_width, eye_height = optimal_settings["eye_resolution"]
+                output_resolution = (eye_width, eye_height)
+                
+                # Update pipeline settings based on detected properties
+                self.baseline = optimal_settings["baseline"]
+                self.focal_length = optimal_settings["focal_length"]
+                
+                print(f"Auto-detected settings: {optimal_settings['aspect_ratio_name']} aspect ratio, "
+                      f"eye resolution: {eye_width}x{eye_height}")
+            
             # Extract frames
             print("Extracting frames...")
             os.makedirs(frames_dir, exist_ok=True)
@@ -74,41 +98,53 @@ class QualityPreservingPipeline:
             
             # Process frames
             print("Processing frames...")
-            for i, frame_file in enumerate(frame_files):
-                print(f"Processing frame {i+1}/{len(frame_files)}")
-                
-                # Load frame
-                frame_path = os.path.join(frames_dir, frame_file)
-                frame = cv2.imread(frame_path)
-                
-                if frame is None:
-                    print(f"Warning: Could not load frame {frame_file}")
-                    continue
-                
-                # Resize frame if necessary
-                if max_dimension:
-                    height, width = frame.shape[:2]
-                    if max(height, width) > max_dimension:
-                        scale = max_dimension / max(height, width)
-                        new_width = int(width * scale)
-                        new_height = int(height * scale)
-                        frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
-                        print(f"  Resized frame to {new_width}x{new_height}")
-                
-                # Process frame
-                try:
-                    left_frame, right_frame = self.process_frame(frame)
+            from utils.progress_monitor import ProgressContext
+            with ProgressContext(len(frame_files), "Processing frames") as progress:
+                for i, frame_file in enumerate(frame_files):
+                    #print(f"Processing frame {i+1}/{len(frame_files)}")
                     
-                    # Save processed frames
-                    left_path = os.path.join(processed_dir, f"left_{frame_file}")
-                    right_path = os.path.join(processed_dir, f"right_{frame_file}")
-                    cv2.imwrite(left_path, left_frame)
-                    cv2.imwrite(right_path, right_frame)
-                except Exception as e:
-                    print(f"Error processing frame {frame_file}: {e}")
-                    # Copy original frame as fallback
-                    shutil.copy(frame_path, os.path.join(processed_dir, f"left_{frame_file}"))
-                    shutil.copy(frame_path, os.path.join(processed_dir, f"right_{frame_file}"))
+                    # Load frame
+                    frame_path = os.path.join(frames_dir, frame_file)
+                    frame = cv2.imread(frame_path)
+                    
+                    if frame is None:
+                        print(f"Warning: Could not load frame {frame_file}")
+                        progress.update(1)
+                        progress.print_status()
+                        if progress_callback:
+                            progress_callback(progress.get_status_string())
+                        continue
+                    
+                    # Resize frame if necessary
+                    if max_dimension:
+                        height, width = frame.shape[:2]
+                        if max(height, width) > max_dimension:
+                            scale = max_dimension / max(height, width)
+                            new_width = int(width * scale)
+                            new_height = int(height * scale)
+                            frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                            #print(f"  Resized frame to {new_width}x{new_height}")
+                    
+                    # Process frame
+                    try:
+                        left_frame, right_frame = self.process_frame(frame)
+                        
+                        # Save processed frames
+                        left_path = os.path.join(processed_dir, f"left_{frame_file}")
+                        right_path = os.path.join(processed_dir, f"right_{frame_file}")
+                        cv2.imwrite(left_path, left_frame)
+                        cv2.imwrite(right_path, right_frame)
+                    except Exception as e:
+                        print(f"Error processing frame {frame_file}: {e}")
+                        # Copy original frame as fallback
+                        shutil.copy(frame_path, os.path.join(processed_dir, f"left_{frame_file}"))
+                        shutil.copy(frame_path, os.path.join(processed_dir, f"right_{frame_file}"))
+                    
+                    # Update progress
+                    progress.update(1)
+                    progress.print_status()
+                    if progress_callback:
+                        progress_callback(progress.get_status_string())
             
             # Get video properties
             cap = cv2.VideoCapture(input_path)
@@ -117,7 +153,7 @@ class QualityPreservingPipeline:
             
             # Create stereo video with preserved audio
             print("Creating stereo video with preserved audio...")
-            self._create_stereo_video(processed_dir, input_path, output_path, fps, format)
+            self._create_stereo_video(processed_dir, input_path, output_path, fps, format, output_resolution)
             
             print(f"Video conversion completed! Output saved to: {output_path}")
             
@@ -256,7 +292,7 @@ class QualityPreservingPipeline:
         
         return sharpened
     
-    def _create_stereo_video(self, processed_dir, input_path, output_path, fps, format):
+    def _create_stereo_video(self, processed_dir, input_path, output_path, fps, format, output_resolution=None):
         """
         Create stereo video with preserved audio.
         
@@ -266,17 +302,38 @@ class QualityPreservingPipeline:
             output_path (str): Path to output video
             fps (int): Frames per second
             format (str): Stereo format
+            output_resolution (tuple): Output resolution as (width, height) for each eye
         """
         left_pattern = f"{processed_dir}/left_frame_%05d.png"
         right_pattern = f"{processed_dir}/right_frame_%05d.png"
         
         # Build FFmpeg command based on format
         if format == "sbs":  # Side-by-side
-            filter_complex = "[0:v][1:v]hstack=inputs=2[v]"
+            if output_resolution:
+                # Scale each eye to the specified resolution and then hstack
+                width, height = output_resolution
+                filter_complex = f"[0:v]scale={width}:{height},setsar=1:1[left];[1:v]scale={width}:{height},setsar=1:1[right];[left][right]hstack=inputs=2[v]"
+                aspect_ratio = f"{width*2}:{height}"
+            else:
+                filter_complex = "[0:v][1:v]hstack=inputs=2[v]"
+                aspect_ratio = "16:9"  # Default aspect ratio
         elif format == "tb":  # Top-bottom
-            filter_complex = "[0:v][1:v]vstack=inputs=2[v]"
+            if output_resolution:
+                # Scale each eye to the specified resolution and then vstack
+                width, height = output_resolution
+                filter_complex = f"[0:v]scale={width}:{height},setsar=1:1[left];[1:v]scale={width}:{height},setsar=1:1[right];[left][right]vstack=inputs=2[v]"
+                aspect_ratio = f"{width}:{height*2}"
+            else:
+                filter_complex = "[0:v][1:v]vstack=inputs=2[v]"
+                aspect_ratio = "16:9"  # Default aspect ratio
         elif format == "anaglyph":  # Red-cyan anaglyph
-            filter_complex = "[0:v]format=yuv444p,lutyuv=y=gammaval(0.5)[left];[1:v]format=yuv444p,lutyuv=y=gammaval(0.5)[right];[left][right]anaglyph[v]"
+            if output_resolution:
+                width, height = output_resolution
+                filter_complex = f"[0:v]scale={width}:{height},setsar=1:1[left];[1:v]scale={width}:{height},setsar=1:1[right];[left][right]anaglyph[v]"
+                aspect_ratio = f"{width}:{height}"
+            else:
+                filter_complex = "[0:v]format=yuv444p,lutyuv=y=gammaval(0.5)[left];[1:v]format=yuv444p,lutyuv=y=gammaval(0.5)[right];[left][right]anaglyph[v]"
+                aspect_ratio = "16:9"  # Default aspect ratio
         else:
             raise ValueError(f"Unsupported format: {format}")
         
@@ -286,13 +343,15 @@ class QualityPreservingPipeline:
                f"-i {input_path} "
                f"-filter_complex '{filter_complex}' "
                f"-map '[v]' -map 2:a? "
-               f"-c:v libx264 -preset medium -crf 18 -pix_fmt yuv420p "
+               f"-c:v libx264 -preset medium "
+               f"-crf 18 -pix_fmt yuv420p "
+               f"-aspect {aspect_ratio} "
                f"-c:a copy {output_path}")
         
         os.system(cmd)
 
 # Convenience functions
-def convert_video_to_stereo(input_path, output_path, profile="balanced", format="sbs"):
+def convert_video_to_stereo(input_path, output_path, profile="balanced", format="sbs", output_resolution=None, auto_settings=True, progress_callback=None):
     """
     Convert a video to stereo 3D with quality preservation.
     
@@ -301,10 +360,14 @@ def convert_video_to_stereo(input_path, output_path, profile="balanced", format=
         output_path (str): Path to output video
         profile (str): Depth estimation profile
         format (str): Stereo format
+        output_resolution (tuple): Output resolution as (width, height) for each eye
+        auto_settings (bool): Automatically detect and configure settings based on video properties
+        progress_callback (callable): Function to call with progress updates (optional)
         
     Returns:
         str: Path to output video
     """
     pipeline = QualityPreservingPipeline(depth_profile=profile)
-    pipeline.convert_video(input_path, output_path, format=format)
+    pipeline.convert_video(input_path, output_path, format=format, output_resolution=output_resolution, 
+                          auto_settings=auto_settings, progress_callback=progress_callback)
     return output_path

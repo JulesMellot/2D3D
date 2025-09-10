@@ -9,6 +9,7 @@ import cv2
 import tempfile
 import shutil
 from pathlib import Path
+from utils.progress_monitor import VideoProcessingProgress
 
 class VideoProcessor:
     def __init__(self, input_path, output_path):
@@ -94,6 +95,10 @@ class VideoProcessor:
             fps (int): FPS for output video
             format (str): Stereo format ("sbs", "tb", "anaglyph")
         """
+        # Count frames for progress monitoring
+        left_frames = sorted([f for f in os.listdir(left_frame_dir) if f.endswith('.png')])
+        total_frames = len(left_frames)
+        
         # Build FFmpeg command based on format
         if format == "sbs":  # Side-by-side
             filter_complex = "[0:v][1:v]hstack=inputs=2[v]"

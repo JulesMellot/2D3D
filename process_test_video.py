@@ -24,7 +24,9 @@ def main():
         input_path, 
         output_path, 
         format="sbs",  # Side-by-side format
-        max_dimension=None  # Process at original resolution
+        max_dimension=None,  # Process at original resolution
+        output_resolution=(960, 1080),  # Output resolution for each eye
+        auto_settings=True  # Enable automatic settings detection
     )
     
     print(f"Processing completed! Output saved to {output_path}")

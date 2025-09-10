@@ -12,6 +12,7 @@
     "batch_size": 1,
     "gpu_acceleration": true,
     "default_format": "sbs",
+    "default_resolution": [960, 1080],
     "crf": 18,
     "preset": "medium"
 }

@@ -10,11 +10,16 @@ An open-source alternative to Owl3D for converting 2D videos into stereoscopic 3
 - **Stereo View Synthesis**: Accurate view warping with occlusion handling
 - **Quality Preservation**: Maintains original color, contrast, and visual integrity
 - **Multiple Output Formats**: Side-by-side, top-bottom, anaglyph, RGBD
+- **Custom Output Resolution**: Specify resolution per eye for 3D TV compatibility
+- **Automatic Aspect Ratio Detection**: Intelligent settings based on input video properties
+- **Advanced Progress Monitoring**: Real-time progress with accurate ETA calculation
+- **GUI Progress Display**: Visual progress bar and detailed status information
 - **Audio Preservation**: Maintains all original audio tracks and metadata
 - **Cross-Platform**: GPU acceleration support (CUDA, MPS, ROCm)
 - **Performance Optimization**: Chunked processing for large videos
 - **Temporal Consistency**: Frame-to-frame stability algorithms
-- **Graphical User Interface**: Easy-to-use GUI application
+- **Graphical User Interface**: Easy-to-use GUI application with presets
+- **Custom Temporary Directory**: Specify where temporary files are stored
 - **Extensible Architecture**: Modular design for easy enhancements
 
 ## Installation
@@ -55,6 +60,9 @@ python main.py input_video.mp4 -p balanced --baseline 0.05 --format sbs
 # Process at specific resolution
 python main.py input_video.mp4 -m 1080  # Process at max 1080p
 
+# Use custom temporary directory
+python main.py input_video.mp4 --temp-dir /path/to/temp/dir
+
 # Launch GUI application
 python main.py --gui
 ```
@@ -77,6 +85,10 @@ optional arguments:
                         Stereo format (default: sbs)
   -m MAX_DIMENSION, --max-dimension MAX_DIMENSION
                         Maximum dimension for processing (to reduce memory usage)
+  --output-resolution WIDTH HEIGHT
+                        Output resolution for each eye (width height)
+  --no-auto-settings    Disable automatic settings detection based on video properties
+  --temp-dir TEMP_DIR   Temporary directory for processing files
   --gui                 Launch GUI application
 ```
 
@@ -96,8 +108,14 @@ from enhanced_pipeline import EnhancedPipeline
 # Create pipeline
 pipeline = EnhancedPipeline(depth_profile="balanced", baseline=0.05)
 
-# Convert video
-pipeline.convert_video("input.mp4", "output.mp4", format="sbs")
+# Convert video with default resolution and automatic settings
+pipeline.convert_video("input.mp4", "output.mp4", format="sbs", temp_dir="/path/to/temp/dir")
+
+# Convert video with custom output resolution (960x1080 per eye for SBS format)
+pipeline.convert_video("input.mp4", "output.mp4", format="sbs", output_resolution=(960, 1080))
+
+# Convert video with automatic settings disabled
+pipeline.convert_video("input.mp4", "output.mp4", format="sbs", auto_settings=False)
 ```
 
 ## Pipeline Architecture
@@ -167,6 +185,13 @@ Output Video (with preserved audio)
 - `max_dimension`: Maximum processing resolution
 - `batch_size`: Number of frames to process together
 - `gpu_acceleration`: Enable GPU processing
+- `temp_dir`: Custom temporary directory
+
+### Output Settings
+- `default_format`: Default stereo format ("sbs", "tb", "anaglyph")
+- `default_resolution`: Default output resolution per eye [width, height]
+- `crf`: Constant rate factor for video encoding (0-51, lower = higher quality)
+- `preset`: Encoding speed/quality tradeoff ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")
 
 ## Temporal Consistency
 
@@ -208,6 +233,7 @@ Output Video (with preserved audio)
 - Configurable maximum dimensions
 - Batch processing capabilities
 - Multi-threaded frame extraction
+- Custom temporary directory support
 
 ## Graphical User Interface
 
@@ -219,13 +245,35 @@ The GUI application provides an easy-to-use interface for converting videos:
 - Progress monitoring
 - Error handling and notifications
 - Cross-platform compatibility
+- Custom temporary directory selection
+
+### GUI Presets
+The GUI includes several optimized presets for different use cases:
+
+- **Fast**: Optimized for speed with reasonable quality (480x270 resolution, fast encoding)
+- **Balanced**: Good compromise between speed and quality (960x540 resolution, medium encoding)
+- **Quality**: Highest quality settings (1920x1080 resolution, slow encoding with post-processing)
+- **3DTV**: Optimized for comfortable 3D TV viewing (960x1080 resolution, standard baseline)
+- **VR**: Optimized for virtual reality viewing (3840x2160 resolution, enhanced depth)
+- **Custom**: Save your own custom settings
 
 ### GUI Controls
 - **Input/Output**: File selection dialogs
+- **Temp Directory**: Temporary directory selection
+- **Presets**: Fast/Balanced/Quality/3DTV/VR/Custom presets with one-click apply
 - **Depth Profile**: Fast/Balanced/Precision options
 - **Output Format**: SBS/TB/Anaglyph selection
-- **Stereo Baseline**: Slider for depth effect strength
+- **Output Resolution per Eye**: Width and height input fields for each eye
+- **Stereo Baseline**: Slider for depth effect strength (0.01-0.2)
+- **Focal Length**: Adjustable camera focal length (recommended 800-1200)
 - **Max Dimension**: Resolution limiting control
+- **Temporal Smoothing**: Enable/disable frame-to-frame smoothing
+- **Color Preservation**: Maintain original color integrity
+- **Post Processing**: Apply sharpening/denoising
+- **Encoding Settings**: CRF quality (0-51) and preset controls
+- **GPU Acceleration**: Enable/disable GPU processing
+- **Auto Settings**: Automatically detect aspect ratio and optimize settings
+- **Progress Monitoring**: Real-time progress bar and detailed status information
 
 ## Project Structure
 ```
@@ -286,12 +334,16 @@ The system uses a JSON-based configuration file (`config.json`) for all settings
     "depth_model": "MiDaS",
     "baseline": 0.05,
     "focal_length": 1000,
+    "shift_direction": "horizontal",
     "preserve_colors": true,
     "temporal_smoothing": true,
-    "temporal_consistency": true,
-    "temporal_method": "optical_flow",
+    "temporal_smoothing_factor": 0.1,
+    "post_process": false,
     "max_dimension": null,
+    "batch_size": 1,
+    "gpu_acceleration": true,
     "default_format": "sbs",
+    "default_resolution": [960, 1080],
     "crf": 18,
     "preset": "medium"
 }

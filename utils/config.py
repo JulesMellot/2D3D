@@ -31,6 +31,7 @@ class Config:
             
             # Output settings
             "default_format": "sbs",
+            "default_resolution": [960, 1080],
             "crf": 18,
             "preset": "medium"
         }
