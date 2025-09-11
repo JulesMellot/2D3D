@@ -9,6 +9,7 @@ import tempfile
 import shutil
 from utils.device import get_device
 from utils.config import get_config
+from utils.optimization import PerformanceOptimizer, OptimizedDepthEstimator
 
 class EnhancedPipeline:
     def __init__(self, depth_profile="balanced", baseline=0.05, focal_length=1000):
@@ -41,9 +42,11 @@ class EnhancedPipeline:
         self.default_resolution = self.config.get("default_resolution", [960, 1080])
         
         # Initialize depth estimator (using improved method that works)
-        from depth_estimation.improved import DepthEstimator
-        self.depth_estimator = DepthEstimator(profile=self.depth_profile)
+        self.depth_estimator = OptimizedDepthEstimator(profile=self.depth_profile)
         self.depth_method = "improved"
+        
+        # Initialize performance optimizer
+        self.optimizer = PerformanceOptimizer()
         
         # Initialize temporal consistency if enabled
         self.temporal_consistency = None
@@ -119,52 +122,83 @@ class EnhancedPipeline:
             if not frame_files:
                 raise ValueError("No frames extracted from video")
             
-            # Process frames
+            # Process frames with optimization
             print("Processing frames...")
             from utils.progress_monitor import ProgressContext
-            with ProgressContext(len(frame_files), "Processing frames") as progress:
-                for i, frame_file in enumerate(frame_files):
-                    #print(f"Processing frame {i+1}/{len(frame_files)}")
+            
+            # Use batch processing for better performance
+            batch_size = self.config.get("batch_size", 4)
+            total_frames = len(frame_files)
+            
+            with ProgressContext(total_frames, "Processing frames") as progress:
+                # Process frames in batches
+                for i in range(0, total_frames, batch_size):
+                    batch_files = frame_files[i:i + batch_size]
+                    batch_frames = []
+                    batch_paths = []
                     
-                    # Load frame
-                    frame_path = os.path.join(frames_dir, frame_file)
-                    frame = cv2.imread(frame_path)
-                    
-                    if frame is None:
-                        print(f"Warning: Could not load frame {frame_file}")
-                        progress.update(1)
-                        progress.print_status()
-                        if progress_callback:
-                            progress_callback(progress.get_status_string())
-                        continue
-                    
-                    # Resize frame if necessary
-                    if max_dimension:
-                        height, width = frame.shape[:2]
-                        if max(height, width) > max_dimension:
-                            scale = max_dimension / max(height, width)
-                            new_width = int(width * scale)
-                            new_height = int(height * scale)
-                            frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
-                            #print(f"  Resized frame to {new_width}x{new_height}")
-                    
-                    # Process frame
-                    try:
-                        left_frame, right_frame = self.process_frame(frame)
+                    # Load batch frames
+                    for frame_file in batch_files:
+                        frame_path = os.path.join(frames_dir, frame_file)
+                        frame = cv2.imread(frame_path)
                         
-                        # Save processed frames
-                        left_path = os.path.join(processed_dir, f"left_{frame_file}")
-                        right_path = os.path.join(processed_dir, f"right_{frame_file}")
-                        cv2.imwrite(left_path, left_frame)
-                        cv2.imwrite(right_path, right_frame)
-                    except Exception as e:
-                        print(f"Error processing frame {frame_file}: {e}")
-                        # Copy original frame as fallback
-                        shutil.copy(frame_path, os.path.join(processed_dir, f"left_{frame_file}"))
-                        shutil.copy(frame_path, os.path.join(processed_dir, f"right_{frame_file}"))
+                        if frame is not None:
+                            # Resize frame if necessary
+                            if max_dimension:
+                                height, width = frame.shape[:2]
+                                if max(height, width) > max_dimension:
+                                    scale = max_dimension / max(height, width)
+                                    new_width = int(width * scale)
+                                    new_height = int(height * scale)
+                                    frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                            
+                            batch_frames.append(frame)
+                            batch_paths.append(frame_path)
+                        else:
+                            print(f"Warning: Could not load frame {frame_file}")
+                            progress.update(1)
+                            progress.print_status()
+                    
+                    # Process batch frames in parallel
+                    if batch_frames:
+                        try:
+                            # Process frames in parallel
+                            processed_frames = self.optimizer.parallel_frame_processing(
+                                self.process_frame, batch_frames
+                            )
+                            
+                            # Save processed frames
+                            for j, (frame_file, processed_result) in enumerate(zip(batch_files, processed_frames)):
+                                if processed_result is not None:
+                                    left_frame, right_frame = processed_result
+                                    left_path = os.path.join(processed_dir, f"left_{frame_file}")
+                                    right_path = os.path.join(processed_dir, f"right_{frame_file}")
+                                    cv2.imwrite(left_path, left_frame)
+                                    cv2.imwrite(right_path, right_frame)
+                                else:
+                                    # Copy original frame as fallback
+                                    frame_path = batch_paths[j]
+                                    shutil.copy(frame_path, os.path.join(processed_dir, f"left_{frame_file}"))
+                                    shutil.copy(frame_path, os.path.join(processed_dir, f"right_{frame_file}"))
+                        except Exception as e:
+                            print(f"Error processing batch: {e}")
+                            # Fallback: process frames individually
+                            for frame_file, frame in zip(batch_files, batch_frames):
+                                try:
+                                    left_frame, right_frame = self.process_frame(frame)
+                                    left_path = os.path.join(processed_dir, f"left_{frame_file}")
+                                    right_path = os.path.join(processed_dir, f"right_{frame_file}")
+                                    cv2.imwrite(left_path, left_frame)
+                                    cv2.imwrite(right_path, right_frame)
+                                except Exception as e:
+                                    print(f"Error processing frame {frame_file}: {e}")
+                                    # Copy original frame as fallback
+                                    frame_path = os.path.join(frames_dir, frame_file)
+                                    shutil.copy(frame_path, os.path.join(processed_dir, f"left_{frame_file}"))
+                                    shutil.copy(frame_path, os.path.join(processed_dir, f"right_{frame_file}"))
                     
                     # Update progress
-                    progress.update(1)
+                    progress.update(len(batch_files))
                     progress.print_status()
                     if progress_callback:
                         progress_callback(progress.get_status_string())
@@ -200,8 +234,8 @@ class EnhancedPipeline:
         # Store original frame for quality preservation
         original_frame = frame.copy()
         
-        # Estimate depth
-        depth_map = self.depth_estimator.predict_depth(frame)
+        # Estimate depth using optimized estimator
+        depth_map = self.depth_estimator.predict_depth_optimized(frame)
         
         # Apply temporal consistency if enabled
         if self.temporal_consistency is not None:

@@ -13,9 +13,12 @@ This project is an open-source tool for converting 2D videos to stereoscopic 3D 
 - **Custom Output Resolution**: Specify resolution per eye for 3D TV compatibility
 - **Automatic Aspect Ratio Detection**: Intelligent settings based on input video properties
 - **Advanced Progress Monitoring**: Real-time progress with accurate ETA calculation
+- **GUI Progress Display**: Visual progress bar and detailed status information
+- **Video Preview**: First frame preview with refresh button
+- **3D Metadata Support**: Standard metadata for 3D video playback compatibility
+- **Performance Optimization**: Parallel processing, batch optimization, and memory management
 - **Audio Preservation**: Maintains all original audio tracks and metadata
 - **Cross-Platform**: GPU acceleration support (CUDA, MPS, ROCm)
-- **Performance Optimization**: Chunked processing for large videos
 - **Temporal Consistency**: Frame-to-frame stability algorithms
 - **Graphical User Interface**: Easy-to-use GUI application with presets
 - **Custom Temporary Directory**: Specify where temporary files are stored
@@ -87,6 +90,7 @@ Tkinter-based graphical interface with:
 - Parameter adjustment
 - Progress monitoring
 - Progress bar and detailed status information
+- Video preview with first frame display
 - Error handling
 - Output resolution per eye selector
 - Preset system (Fast/Balanced/Quality/3DTV/VR/Custom)
@@ -180,12 +184,20 @@ The system uses a JSON-based configuration file (`config.json`) for all settings
     "temporal_smoothing_factor": 0.1,
     "post_process": false,
     "max_dimension": null,
-    "batch_size": 1,
+    "batch_size": 4,
     "gpu_acceleration": true,
     "default_format": "sbs",
     "default_resolution": [960, 1080],
     "crf": 18,
-    "preset": "medium"
+    "preset": "medium",
+    "optimization": {
+        "parallel_processing": true,
+        "batch_processing": true,
+        "memory_optimization": true,
+        "async_loading": true,
+        "max_workers": 8,
+        "max_memory_gb": 2.0
+    }
 }
 ```
 

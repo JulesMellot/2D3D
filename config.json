@@ -9,10 +9,18 @@
     "temporal_smoothing_factor": 0.1,
     "post_process": false,
     "max_dimension": null,
-    "batch_size": 1,
+    "batch_size": 4,
     "gpu_acceleration": true,
     "default_format": "sbs",
     "default_resolution": [960, 1080],
     "crf": 18,
-    "preset": "medium"
+    "preset": "medium",
+    "optimization": {
+        "parallel_processing": true,
+        "batch_processing": true,
+        "memory_optimization": true,
+        "async_loading": true,
+        "max_workers": 8,
+        "max_memory_gb": 2.0
+    }
 }

@@ -10,6 +10,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from utils.progress_monitor import VideoProcessingProgress
+from utils.metadata import add_3d_metadata
 
 class VideoProcessor:
     def __init__(self, input_path, output_path):
@@ -84,6 +85,20 @@ class VideoProcessor:
         
         # Run FFmpeg
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Add 3D metadata
+        temp_output = self.output_path + ".tmp"
+        try:
+            os.rename(self.output_path, temp_output)
+            if add_3d_metadata(temp_output, self.output_path, format):
+                os.remove(temp_output)
+            else:
+                # If metadata addition fails, keep the original file
+                os.rename(temp_output, self.output_path)
+        except Exception as e:
+            print(f"Warning: Could not add 3D metadata: {e}")
+            if os.path.exists(temp_output):
+                os.rename(temp_output, self.output_path)
     
     def create_stereo_video(self, left_frame_dir, right_frame_dir, fps=30, format="sbs"):
         """
@@ -130,6 +145,20 @@ class VideoProcessor:
         
         # Run FFmpeg
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # Add 3D metadata
+        temp_output = self.output_path + ".tmp"
+        try:
+            os.rename(self.output_path, temp_output)
+            if add_3d_metadata(temp_output, self.output_path, format):
+                os.remove(temp_output)
+            else:
+                # If metadata addition fails, keep the original file
+                os.rename(temp_output, self.output_path)
+        except Exception as e:
+            print(f"Warning: Could not add 3D metadata: {e}")
+            if os.path.exists(temp_output):
+                os.rename(temp_output, self.output_path)
     
     def cleanup(self):
         """Clean up temporary files."""

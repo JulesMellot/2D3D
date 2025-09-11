@@ -26,14 +26,24 @@ class Config:
             
             # Performance settings
             "max_dimension": None,
-            "batch_size": 1,
+            "batch_size": 4,
             "gpu_acceleration": True,
             
             # Output settings
             "default_format": "sbs",
             "default_resolution": [960, 1080],
             "crf": 18,
-            "preset": "medium"
+            "preset": "medium",
+            
+            # Optimization settings
+            "optimization": {
+                "parallel_processing": True,
+                "batch_processing": True,
+                "memory_optimization": True,
+                "async_loading": True,
+                "max_workers": 8,
+                "max_memory_gb": 2.0
+            }
         }
         
         self.config = self._load_config()

@@ -14,9 +14,11 @@ An open-source alternative to Owl3D for converting 2D videos into stereoscopic 3
 - **Automatic Aspect Ratio Detection**: Intelligent settings based on input video properties
 - **Advanced Progress Monitoring**: Real-time progress with accurate ETA calculation
 - **GUI Progress Display**: Visual progress bar and detailed status information
+- **Video Preview**: First frame preview with refresh button
+- **3D Metadata Support**: Standard metadata for 3D video playback compatibility
+- **Performance Optimization**: Parallel processing, batch optimization, and memory management
 - **Audio Preservation**: Maintains all original audio tracks and metadata
 - **Cross-Platform**: GPU acceleration support (CUDA, MPS, ROCm)
-- **Performance Optimization**: Chunked processing for large videos
 - **Temporal Consistency**: Frame-to-frame stability algorithms
 - **Graphical User Interface**: Easy-to-use GUI application with presets
 - **Custom Temporary Directory**: Specify where temporary files are stored
@@ -193,6 +195,15 @@ Output Video (with preserved audio)
 - `crf`: Constant rate factor for video encoding (0-51, lower = higher quality)
 - `preset`: Encoding speed/quality tradeoff ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")
 
+### Optimization Settings
+- `batch_size`: Number of frames to process together (default: 4)
+- `optimization.parallel_processing`: Enable parallel frame processing
+- `optimization.batch_processing`: Enable batch processing for better GPU utilization
+- `optimization.memory_optimization`: Enable memory usage control
+- `optimization.async_loading`: Enable asynchronous frame loading
+- `optimization.max_workers`: Maximum number of worker threads
+- `optimization.max_memory_gb`: Maximum memory usage in GB
+
 ## Temporal Consistency
 
 ### Optical Flow
@@ -274,6 +285,7 @@ The GUI includes several optimized presets for different use cases:
 - **GPU Acceleration**: Enable/disable GPU processing
 - **Auto Settings**: Automatically detect aspect ratio and optimize settings
 - **Progress Monitoring**: Real-time progress bar and detailed status information
+- **Video Preview**: First frame preview with refresh button
 
 ## Project Structure
 ```

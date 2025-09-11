@@ -7,7 +7,10 @@ from tkinter import ttk, filedialog, messagebox
 import threading
 import os
 import tempfile
+import cv2
+from PIL import Image, ImageTk
 from enhanced_pipeline import EnhancedPipeline
+from utils.config import get_config
 from utils.config import get_config
 
 class D2D3GUI:
@@ -46,6 +49,10 @@ class D2D3GUI:
         # Preset variables
         self.current_preset = tk.StringVar(value="balanced")
         
+        # Preview image
+        self.preview_image = None
+        self.preview_label = None
+        
         # Create UI
         self.create_widgets()
         
@@ -62,7 +69,7 @@ class D2D3GUI:
         # Title
         title_label = ttk.Label(main_frame, text="2D to 3D Video Converter", 
                                font=("Arial", 16, "bold"))
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
+        title_label.grid(row=0, column=0, columnspan=4, pady=(0, 20))
         
         # Input file selection
         ttk.Label(main_frame, text="Input Video:").grid(row=1, column=0, sticky=tk.W, pady=5)
@@ -74,6 +81,13 @@ class D2D3GUI:
             row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 5))
         ttk.Button(input_frame, text="Browse...", command=self.browse_input).grid(
             row=0, column=1)
+        
+        # Preview frame
+        preview_frame = ttk.LabelFrame(main_frame, text="Preview", padding="5")
+        preview_frame.grid(row=1, column=3, rowspan=3, padx=(10, 0), pady=5, sticky=(tk.N, tk.W, tk.E, tk.S))
+        self.preview_label = ttk.Label(preview_frame)
+        self.preview_label.grid(row=0, column=0)
+        ttk.Button(preview_frame, text="Refresh Preview", command=self.load_preview).grid(row=1, column=0, pady=(5, 0))
         
         # Output file selection
         ttk.Label(main_frame, text="Output Video:").grid(row=2, column=0, sticky=tk.W, pady=5)
@@ -100,7 +114,7 @@ class D2D3GUI:
         # Presets
         ttk.Label(main_frame, text="Preset:").grid(row=4, column=0, sticky=tk.W, pady=5)
         preset_frame = ttk.Frame(main_frame)
-        preset_frame.grid(row=4, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        preset_frame.grid(row=4, column=1, columnspan=3, sticky=(tk.W, tk.E), pady=5)
         preset_frame.columnconfigure(0, weight=1)
         
         preset_combo = ttk.Combobox(preset_frame, textvariable=self.current_preset,
@@ -113,7 +127,7 @@ class D2D3GUI:
         
         # Settings notebook (tabs)
         settings_notebook = ttk.Notebook(main_frame)
-        settings_notebook.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=10)
+        settings_notebook.grid(row=5, column=0, columnspan=4, sticky=(tk.W, tk.E, tk.N, tk.S), pady=10)
         
         # Basic Settings Tab
         basic_frame = ttk.Frame(settings_notebook, padding="10")
@@ -206,20 +220,20 @@ class D2D3GUI:
         
         # Progress bar
         self.progress = ttk.Progressbar(main_frame, mode="indeterminate")
-        self.progress.grid(row=6, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=5)
+        self.progress.grid(row=6, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=5)
         
         # Progress label for detailed information
         self.progress_label = ttk.Label(main_frame, text="", font=("Arial", 9))
-        self.progress_label.grid(row=7, column=0, columnspan=3, pady=2)
+        self.progress_label.grid(row=7, column=0, columnspan=4, pady=2)
         
         # Status label
         self.status_label = ttk.Label(main_frame, text="Ready")
-        self.status_label.grid(row=8, column=0, columnspan=3, pady=5)
+        self.status_label.grid(row=8, column=0, columnspan=4, pady=5)
         
         # Convert button
         self.convert_button = ttk.Button(main_frame, text="Convert Video", 
                                        command=self.start_conversion)
-        self.convert_button.grid(row=9, column=0, columnspan=3, pady=20)
+        self.convert_button.grid(row=9, column=0, columnspan=4, pady=20)
         
         # Center the window
         self.root.eval('tk::PlaceWindow . center')
@@ -316,7 +330,61 @@ class D2D3GUI:
                 base_name = os.path.splitext(os.path.basename(filename))[0]
                 output_filename = f"{base_name}_stereo_{self.stereo_format.get()}.mp4"
                 self.output_path.set(os.path.join(os.path.dirname(filename), output_filename))
+            
+            # Load preview when input is selected
+            self.load_preview()
                 
+    def load_preview(self):
+        """Load and display preview of the first frame of the video."""
+        input_path = self.input_path.get()
+        if not input_path or not os.path.exists(input_path):
+            return
+            
+        try:
+            # Extract first frame using OpenCV
+            cap = cv2.VideoCapture(input_path)
+            ret, frame = cap.read()
+            cap.release()
+            
+            if ret:
+                # Resize frame for preview (max 300x200)
+                height, width = frame.shape[:2]
+                max_height, max_width = 200, 300
+                
+                if height > max_height or width > max_width:
+                    scale = min(max_height/height, max_width/width)
+                    new_width = int(width * scale)
+                    new_height = int(height * scale)
+                    frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
+                
+                # Convert BGR to RGB
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                
+                # Convert to PIL Image and then to PhotoImage
+                pil_image = Image.fromarray(frame_rgb)
+                self.preview_image = ImageTk.PhotoImage(pil_image)
+                
+                # Update preview label
+                if self.preview_label:
+                    self.preview_label.configure(image=self.preview_image)
+                    self.preview_label.image = self.preview_image  # Keep a reference
+            else:
+                # Clear preview if no frame could be read
+                if self.preview_label:
+                    self.preview_label.configure(image="")
+                    self.preview_label.image = None
+                    
+        except Exception as e:
+            print(f"Error loading preview: {e}")
+            # Clear preview on error
+            if self.preview_label:
+                self.preview_label.configure(image="")
+                self.preview_label.image = None
+        # Clear preview on error
+                if self.preview_label:
+                    self.preview_label.configure(image="")
+                    self.preview_label.image = None
+                    
     def browse_output(self):
         filename = filedialog.asksaveasfilename(
             title="Select Output Video",
