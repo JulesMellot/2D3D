@@ -1,426 +1,104 @@
-# 2D3D - 2D to 3D Video Converter
+# 2D3D — 2D to 3D Video Converter
 
-An open-source alternative to Owl3D for converting 2D videos into stereoscopic 3D while preserving the original video quality.
+An open-source alternative to Owl3D: convert any 2D video into stereoscopic 3D using AI monocular depth estimation ([Depth Anything V2](https://github.com/DepthAnything/Depth-Anything-V2)).
 
 [GitHub Repository](https://github.com/JulesMellot/2D3D.git)
 
+## How it works
+
+For each frame: estimate depth with Depth Anything V2 → keep the original frame as the left eye → warp the right eye by depth-based disparity → stream straight into ffmpeg. No temporary files, original fps and audio are preserved.
+
 ## Features
 
-- **Depth Estimation**: Multiple monocular depth models (MiDaS, ZoeDepth, Depth Anything V2)
-- **Stereo View Synthesis**: Accurate view warping with occlusion handling
-- **Quality Preservation**: Maintains original color, contrast, and visual integrity
-- **Multiple Output Formats**: Side-by-side, top-bottom, anaglyph, RGBD
-- **Custom Output Resolution**: Specify resolution per eye for 3D TV compatibility
-- **Automatic Aspect Ratio Detection**: Intelligent settings based on input video properties
-- **Advanced Progress Monitoring**: Real-time progress with accurate ETA calculation
-- **GUI Progress Display**: Visual progress bar and detailed status information
-- **Video Preview**: First frame preview with refresh button
-- **3D Metadata Support**: Standard metadata for 3D video playback compatibility
-- **Performance Optimization**: Parallel processing, batch optimization, and memory management
-- **Audio Preservation**: Maintains all original audio tracks and metadata
-- **Cross-Platform**: GPU acceleration support (CUDA, MPS, ROCm)
-- **Temporal Consistency**: Frame-to-frame stability algorithms
-- **Graphical User Interface**: Easy-to-use GUI application with presets
-- **Custom Temporary Directory**: Specify where temporary files are stored
-- **Extensible Architecture**: Modular design for easy enhancements
+- **AI depth estimation** — Depth Anything V2 (small/base/large), GPU-accelerated (CUDA, Apple Silicon MPS)
+- **Output formats** — side-by-side (SBS), top-bottom, red-cyan anaglyph
+- **Apple spatial video** — optional MV-HEVC export for Vision Pro (`--spatial`)
+- **Quality preservation** — the left eye is the untouched source frame; audio is copied as-is
+- **Temporal smoothing** — reduces depth flicker between frames
+- **CLI and GUI** — command line or a simple Tkinter interface
 
 ## Installation
 
-### Prerequisites
-- Python 3.8+
-- FFmpeg
-- CUDA-compatible GPU (optional, for NVIDIA acceleration)
-- Apple Silicon Mac (optional, for MPS acceleration)
+Requirements: Python 3.10+, [FFmpeg](https://ffmpeg.org), and optionally a GPU (NVIDIA CUDA or Apple Silicon).
 
-### Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### Install Additional Depth Models (Optional)
+The depth model (~100 MB for `fast`) is downloaded automatically from Hugging Face on first run.
+
+For Vision Pro spatial video output (macOS only):
+
 ```bash
-# For MiDaS
-pip install git+https://github.com/isl-org/MiDaS.git
-
-# For ZoeDepth
-pip install zoedepth
-
-# For Depth Anything V2
-pip install depth-anything-v2
+brew install spatial
 ```
 
 ## Usage
 
-### Command Line Interface
+### Command line
+
 ```bash
-# Convert a video to stereo 3D
-python main.py input_video.mp4 -o output_video.mp4
+# Basic conversion (side-by-side)
+python main.py input.mp4
 
-# Convert with specific settings
-python main.py input_video.mp4 -p balanced --baseline 0.05 --format sbs
+# Choose output, format and depth model size
+python main.py input.mp4 -o output.mp4 -f tb -p precision
 
-# Process at specific resolution
-python main.py input_video.mp4 -m 1080  # Process at max 1080p
+# Stronger 3D effect, custom per-eye resolution
+python main.py input.mp4 --strength 0.05 --eye-resolution 1920 1080
 
-# Use custom temporary directory
-python main.py input_video.mp4 --temp-dir /path/to/temp/dir
-
-# Launch GUI application
-python main.py --gui
+# Also produce an Apple spatial video for Vision Pro
+python main.py input.mp4 --spatial
 ```
 
-### Command Line Arguments
-```
-positional arguments:
-  input                  Input video file
+| Option | Default | Description |
+|---|---|---|
+| `-p, --profile` | `fast` | Depth model: `fast` (Small), `balanced` (Base), `precision` (Large) |
+| `-f, --format` | `sbs` | `sbs`, `tb`, or `anaglyph` |
+| `--strength` | `0.03` | Max disparity as a fraction of frame width |
+| `--smoothing` | `0.3` | Temporal depth smoothing (0 = off) |
+| `--eye-resolution W H` | source | Output resolution per eye |
+| `--crf` / `--preset` | `18` / `medium` | x264 encoding quality/speed |
+| `--spatial` | off | Also export MV-HEVC spatial video (SBS only, macOS) |
 
-optional arguments:
-  -h, --help            show this help message and exit
-  -o OUTPUT, --output OUTPUT
-                        Output video file
-  -p {fast,balanced,precision}, --profile {fast,balanced,precision}
-                        Depth estimation profile (default: balanced)
-  --baseline BASELINE   Stereo baseline (default: 0.05)
-  --focal-length FOCAL_LENGTH
-                        Camera focal length (default: 1000)
-  -f {sbs,tb,anaglyph}, --format {sbs,tb,anaglyph}
-                        Stereo format (default: sbs)
-  -m MAX_DIMENSION, --max-dimension MAX_DIMENSION
-                        Maximum dimension for processing (to reduce memory usage)
-  --output-resolution WIDTH HEIGHT
-                        Output resolution for each eye (width height)
-  --no-auto-settings    Disable automatic settings detection based on video properties
-  --temp-dir TEMP_DIR   Temporary directory for processing files
-  --gui                 Launch GUI application
-```
+### GUI
 
-### Graphical User Interface
 ```bash
-# Launch the GUI application
 python main.py --gui
-
-# Or directly run the GUI
-python gui_app.py
 ```
 
 ### Python API
+
 ```python
-from enhanced_pipeline import EnhancedPipeline
+from pipeline import Pipeline
 
-# Create pipeline
-pipeline = EnhancedPipeline(depth_profile="balanced", baseline=0.05)
-
-# Convert video with default resolution and automatic settings
-pipeline.convert_video("input.mp4", "output.mp4", format="sbs", temp_dir="/path/to/temp/dir")
-
-# Convert video with custom output resolution (960x1080 per eye for SBS format)
-pipeline.convert_video("input.mp4", "output.mp4", format="sbs", output_resolution=(960, 1080))
-
-# Convert video with automatic settings disabled
-pipeline.convert_video("input.mp4", "output.mp4", format="sbs", auto_settings=False)
+Pipeline(profile="fast", strength=0.03).convert("input.mp4", "output.mp4", format="sbs")
 ```
 
-## Pipeline Architecture
+## Model licenses
 
-```
-Input Video
-    ↓
-Frame Extraction (FFmpeg)
-    ↓
-Depth Estimation
-    ↓
-Temporal Consistency
-    ↓
-Stereo Warping
-    ↓
-Occlusion Filling
-    ↓
-Color Preservation
-    ↓
-Frame Recomposition
-    ↓
-Video Encoding (FFmpeg)
-    ↓
-Output Video (with preserved audio)
-```
+| Profile | Model | License |
+|---|---|---|
+| `fast` | Depth Anything V2 Small | Apache-2.0 |
+| `balanced` | Depth Anything V2 Base | CC-BY-NC-4.0 (non-commercial) |
+| `precision` | Depth Anything V2 Large | CC-BY-NC-4.0 (non-commercial) |
 
-## Depth Estimation Models
-
-### MiDaS
-- **Fast Profile**: MiDaS Small model for real-time processing
-- **Balanced Profile**: DPT Hybrid model for good quality/ speed balance
-- **Precision Profile**: DPT Large model for highest quality
-
-### ZoeDepth
-- Specialized for indoor/outdoor scene depth estimation
-- Better edge preservation than MiDaS
-
-### Depth Anything V2
-- Latest state-of-the-art model
-- Excellent generalization across different scenes
-
-## Stereo Formats
-
-- **Side-by-Side (SBS)**: Left and right views side by side
-- **Top-Bottom (TB)**: Left view on top, right view on bottom
-- **Anaglyph**: Red-cyan 3D glasses compatible
-- **RGBD**: Color image with depth map
-
-## Configuration Options
-
-### Depth Estimation
-- `profile`: "fast", "balanced", or "precision"
-- `model`: "MiDaS", "ZoeDepth", or "DepthAnythingV2"
-
-### Stereo Generation
-- `baseline`: Distance between virtual cameras (0.01-0.2)
-- `focal_length`: Virtual camera focal length
-- `shift_direction`: "horizontal" or "vertical"
-
-### Quality Settings
-- `preserve_colors`: Maintain original color integrity
-- `temporal_smoothing`: Reduce flickering between frames
-- `temporal_consistency`: Apply temporal consistency algorithms
-- `post_process`: Apply sharpening/ denoising
-
-### Performance Settings
-- `max_dimension`: Maximum processing resolution
-- `batch_size`: Number of frames to process together
-- `gpu_acceleration`: Enable GPU processing
-- `temp_dir`: Custom temporary directory
-
-### Output Settings
-- `default_format`: Default stereo format ("sbs", "tb", "anaglyph")
-- `default_resolution`: Default output resolution per eye [width, height]
-- `crf`: Constant rate factor for video encoding (0-51, lower = higher quality)
-- `preset`: Encoding speed/quality tradeoff ("ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow")
-
-### Optimization Settings
-- `batch_size`: Number of frames to process together (default: 4)
-- `optimization.parallel_processing`: Enable parallel frame processing
-- `optimization.batch_processing`: Enable batch processing for better GPU utilization
-- `optimization.memory_optimization`: Enable memory usage control
-- `optimization.async_loading`: Enable asynchronous frame loading
-- `optimization.max_workers`: Maximum number of worker threads
-- `optimization.max_memory_gb`: Maximum memory usage in GB
-
-## Temporal Consistency
-
-### Optical Flow
-- Frame-to-frame motion estimation
-- Depth map warping for consistency
-- Configurable blending weights
-
-### Feature Matching
-- ORB feature detection and matching
-- Homography-based consistency
-- Robust to camera motion
-
-## Inpainting Methods
-
-### Basic Inpainting
-- OpenCV Navier-Stokes algorithm
-- Telea inpainting method
-- Fast processing for real-time use
-
-### Diffusion-Based (Framework)
-- Stable Diffusion inpainting framework
-- Text-guided occlusion filling
-- High-quality results (future implementation)
-
-## Performance Optimization
-
-### GPU Acceleration
-- **NVIDIA**: CUDA with xFormers attention optimization
-- **Apple Silicon**: MPS (Metal Performance Shaders)
-- **AMD**: ROCm support (if available)
-
-### Memory Management
-- Automatic resolution scaling for large videos
-- Chunked processing for long videos
-- VRAM optimization for diffusion inpainting
-
-### Processing Options
-- Configurable maximum dimensions
-- Batch processing capabilities
-- Multi-threaded frame extraction
-- Custom temporary directory support
-
-## Graphical User Interface
-
-The GUI application provides an easy-to-use interface for converting videos:
-
-### Features
-- File browsing for input/output selection
-- Real-time parameter adjustment
-- Progress monitoring
-- Error handling and notifications
-- Cross-platform compatibility
-- Custom temporary directory selection
-
-### GUI Presets
-The GUI includes several optimized presets for different use cases:
-
-- **Fast**: Optimized for speed with reasonable quality (480x270 resolution, fast encoding)
-- **Balanced**: Good compromise between speed and quality (960x540 resolution, medium encoding)
-- **Quality**: Highest quality settings (1920x1080 resolution, slow encoding with post-processing)
-- **3DTV**: Optimized for comfortable 3D TV viewing (960x1080 resolution, standard baseline)
-- **VR**: Optimized for virtual reality viewing (3840x2160 resolution, enhanced depth)
-- **Custom**: Save your own custom settings
-
-### GUI Controls
-- **Input/Output**: File selection dialogs
-- **Temp Directory**: Temporary directory selection
-- **Presets**: Fast/Balanced/Quality/3DTV/VR/Custom presets with one-click apply
-- **Depth Profile**: Fast/Balanced/Precision options
-- **Output Format**: SBS/TB/Anaglyph selection
-- **Output Resolution per Eye**: Width and height input fields for each eye
-- **Stereo Baseline**: Slider for depth effect strength (0.01-0.2)
-- **Focal Length**: Adjustable camera focal length (recommended 800-1200)
-- **Max Dimension**: Resolution limiting control
-- **Temporal Smoothing**: Enable/disable frame-to-frame smoothing
-- **Color Preservation**: Maintain original color integrity
-- **Post Processing**: Apply sharpening/denoising
-- **Encoding Settings**: CRF quality (0-51) and preset controls
-- **GPU Acceleration**: Enable/disable GPU processing
-- **Auto Settings**: Automatically detect aspect ratio and optimize settings
-- **Progress Monitoring**: Real-time progress bar and detailed status information
-- **Video Preview**: First frame preview with refresh button
-
-## Project Structure
-```
-2D3D/
-├── README.md                 # Project documentation
-├── requirements.txt          # Dependencies
-├── setup.py                  # Package installation
-├── config.json              # Default configuration
-├── main.py                  # CLI interface
-├── gui_app.py               # GUI application
-├── enhanced_pipeline.py     # Main conversion pipeline
-├── quality_pipeline.py      # Quality-preserving pipeline
-├── process_test_video.py    # Test video processing
-├── test_quality.py          # Quality verification
-├── test_suite.py            # Test suite
-├── depth_estimation/        # Depth models
-│   ├── improved.py          # Improved OpenCV method
-│   └── midas.py             # MiDaS integration
-├── stereo_warp/             # View synthesis
-│   └── warper.py            # Image warping
-├── inpainting/              # Occlusion filling
-│   ├── basic.py             # Basic methods
-│   └── diffusion.py         # Diffusion framework
-├── video_io/                # Video processing
-│   └── processor.py         # FFmpeg integration
-├── utils/                   # Utility functions
-│   ├── device.py            # GPU detection
-│   ├── config.py            # Configuration
-│   ├── temporal.py          # Temporal consistency
-│   └── spherical.py         # 360° video support
-└── gui.py                   # GUI framework
-```
-
-## Extending the Pipeline
-
-### Adding New Depth Models
-1. Create a new module in `depth_estimation/`
-2. Implement the `DepthEstimator` interface
-3. Register in the pipeline factory
-
-### Adding New Inpainting Methods
-1. Create a new module in `inpainting/`
-2. Implement the `Inpainter` interface
-3. Add to the pipeline configuration
-
-### Adding Temporal Consistency Methods
-1. Extend the `TemporalConsistency` class in `utils/temporal.py`
-2. Add new method to configuration
-3. Update pipeline to use new method
-
-## Configuration Management
-
-The system uses a JSON-based configuration file (`config.json`) for all settings:
-
-```json
-{
-    "depth_profile": "balanced",
-    "depth_model": "MiDaS",
-    "baseline": 0.05,
-    "focal_length": 1000,
-    "shift_direction": "horizontal",
-    "preserve_colors": true,
-    "temporal_smoothing": true,
-    "temporal_smoothing_factor": 0.1,
-    "post_process": false,
-    "max_dimension": null,
-    "batch_size": 1,
-    "gpu_acceleration": true,
-    "default_format": "sbs",
-    "default_resolution": [960, 1080],
-    "crf": 18,
-    "preset": "medium"
-}
-```
+Use `fast` for commercial work — it is also the quickest and works very well in practice.
 
 ## Testing
 
-### Unit Tests
 ```bash
-python test_suite.py
+python test_pipeline.py
 ```
 
-### Quality Verification
-```bash
-python test_quality.py
-```
+Runs a synthetic clip through every output format with a stub depth model (no download needed).
 
-## Development
+## Roadmap
 
-### Contributing
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
-
-### Development Setup
-```bash
-# Clone the repository
-git clone https://github.com/JulesMellot/2D3D.git
-cd 2D3D
-
-# Install in development mode
-pip install -e .
-```
-
-## Future Enhancements
-
-### Advanced Depth Models
-- Full ZoeDepth integration
-- Depth Anything V2 implementation
-- Ensemble methods for improved accuracy
-
-### Enhanced Inpainting
-- Complete diffusion-based implementation
-- GAN-based occlusion filling
-- Context-aware inpainting
-
-### Specialized Video Support
-- Complete 360° video processing
-- HDR video conversion
-- Multi-view video generation
-
-### User Experience
-- Full GUI application with advanced features
-- Web-based interface
-- Mobile application
-- Real-time preview
+- Diffusion-based occlusion inpainting ([StereoCrafter](https://github.com/TencentARC/StereoCrafter)-style) to replace the naive warp at disocclusions
+- [MLX](https://github.com/ml-explore/mlx) inference backend for faster Apple Silicon processing
+- Native MV-HEVC export via AVFoundation (currently delegated to the `spatial` CLI)
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Acknowledgments
-
-- [MiDaS](https://github.com/isl-org/MiDaS) for depth estimation
-- [FFmpeg](https://ffmpeg.org/) for video processing
-- [OpenCV](https://opencv.org/) for computer vision utilities
+MIT
