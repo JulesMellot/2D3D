@@ -3,3 +3,4 @@ opencv-python>=4.5
 numpy>=1.24
 transformers>=4.45
 Pillow>=8.3
+coremltools>=8; sys_platform == "darwin"

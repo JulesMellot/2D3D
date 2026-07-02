@@ -10,7 +10,7 @@ For each frame: estimate depth with Depth Anything V2 → keep the original fram
 
 ## Features
 
-- **AI depth estimation** — Depth Anything V2 (small/base/large), GPU-accelerated (CUDA, Apple Silicon MPS)
+- **AI depth estimation** — Depth Anything V2 (small/base/large), GPU-accelerated (CUDA, Apple Silicon MPS); the `fast` profile runs on the Apple Neural Engine via Core ML on macOS (~3× faster than MPS)
 - **Output formats** — side-by-side (SBS), top-bottom, red-cyan anaglyph
 - **Apple spatial video** — optional MV-HEVC export for Vision Pro (`--spatial`)
 - **Quality preservation** — the left eye is the untouched source frame; audio is copied as-is
@@ -96,7 +96,6 @@ Runs a synthetic clip through every output format with a stub depth model (no do
 ## Roadmap
 
 - Diffusion-based occlusion inpainting ([StereoCrafter](https://github.com/TencentARC/StereoCrafter)-style) to replace the naive warp at disocclusions
-- [MLX](https://github.com/ml-explore/mlx) inference backend for faster Apple Silicon processing
 - Native MV-HEVC export via AVFoundation (currently delegated to the `spatial` CLI)
 
 ## License

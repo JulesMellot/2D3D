@@ -21,8 +21,8 @@ class Pipeline:
             depth_fn: override depth function (BGR frame -> float32 [0,1] HxW, 1 = near)
         """
         if depth_fn is None:
-            from depth import DepthEstimator
-            depth_fn = DepthEstimator(profile).predict
+            from depth import create
+            depth_fn = create(profile).predict
         self.depth_fn = depth_fn
         self.strength = strength
         self.smoothing = smoothing
