@@ -55,7 +55,7 @@ def main():
         format=args.format,
         eye_resolution=tuple(args.eye_resolution) if args.eye_resolution else None,
         crf=args.crf, preset=args.preset,
-        progress_callback=lambda msg: print(f"\r{msg}", end="", flush=True),
+        progress_callback=lambda n, total: print(f"\rFrame {n}/{total or '?'}", end="", flush=True),
     )
     print(f"\nDone: {output}")
 

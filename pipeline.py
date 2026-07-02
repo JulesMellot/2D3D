@@ -29,8 +29,12 @@ class Pipeline:
         self._prev_depth = None
 
     def convert(self, input_path, output_path, format="sbs", eye_resolution=None,
-                crf=18, preset="medium", progress_callback=None):
-        """Convert a 2D video to stereo 3D. format: "sbs", "tb" or "anaglyph"."""
+                crf=18, preset="medium", progress_callback=None, should_stop=None):
+        """Convert a 2D video to stereo 3D. format: "sbs", "tb" or "anaglyph".
+
+        progress_callback(n, total) is called every few frames; should_stop()
+        returning True aborts cleanly (the partial output file is kept).
+        """
         cap = cv2.VideoCapture(input_path)
         if not cap.isOpened():
             raise ValueError(f"Cannot open video: {input_path}")
@@ -66,7 +70,9 @@ class Pipeline:
                 encoder.stdin.write(self._compose(left, right, format, (ew, eh)).tobytes())
                 n += 1
                 if progress_callback and n % 5 == 0:
-                    progress_callback(f"Frame {n}/{total or '?'}")
+                    progress_callback(n, total)
+                if should_stop and should_stop():
+                    break
         finally:
             cap.release()
             encoder.stdin.close()
