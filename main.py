@@ -13,12 +13,14 @@ def main():
                         default="fast", help="Depth model size (default: fast)")
     parser.add_argument("-f", "--format", choices=["sbs", "tb", "anaglyph"],
                         default="sbs", help="Stereo format")
+    parser.add_argument("--3dtv", dest="tv_mode", action="store_true",
+                        help="Half-width SBS for 3D TVs (squeeze each eye horizontally)")
     parser.add_argument("--strength", type=float, default=0.03,
                         help="3D strength: max disparity as fraction of width (default: 0.03)")
     parser.add_argument("--smoothing", type=float, default=0.3,
                         help="Temporal depth smoothing 0-1, 0 disables (default: 0.3)")
     parser.add_argument("--eye-resolution", nargs=2, type=int, metavar=("WIDTH", "HEIGHT"),
-                        help="Output resolution per eye (default: source resolution)")
+                        help="Resolution per eye before 3D TV squeezing (default: source resolution)")
     parser.add_argument("--crf", type=int, default=18, help="x264 quality (default: 18)")
     parser.add_argument("--preset", default="medium", help="x264 preset (default: medium)")
     parser.add_argument("--spatial", action="store_true",
@@ -41,8 +43,15 @@ def main():
     if args.spatial and args.format != "sbs":
         print("Error: --spatial requires --format sbs")
         return 1
+    if args.tv_mode and args.format != "sbs":
+        print("Error: --3dtv requires --format sbs")
+        return 1
+    if args.tv_mode and args.spatial:
+        print("Error: --3dtv cannot be combined with --spatial")
+        return 1
 
-    output = args.output or f"{os.path.splitext(os.path.basename(args.input))[0]}_stereo_{args.format}.mp4"
+    layout = "hsbs" if args.tv_mode else args.format
+    output = args.output or f"{os.path.splitext(os.path.basename(args.input))[0]}_stereo_{layout}.mp4"
     out_dir = os.path.dirname(output)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
@@ -53,6 +62,7 @@ def main():
     pipeline.convert(
         args.input, output,
         format=args.format,
+        tv_mode=args.tv_mode,
         eye_resolution=tuple(args.eye_resolution) if args.eye_resolution else None,
         crf=args.crf, preset=args.preset,
         progress_callback=lambda n, total: print(f"\rFrame {n}/{total or '?'}", end="", flush=True),

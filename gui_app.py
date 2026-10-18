@@ -7,6 +7,7 @@ determinate progress with fps + ETA, and cancellable conversions.
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import tkinter as tk
@@ -28,6 +29,7 @@ class App:
         self.output_path = tk.StringVar()
         self.profile = tk.StringVar(value="fast")
         self.stereo_format = tk.StringVar(value="sbs")
+        self.tv_mode = tk.BooleanVar(value=False)
         self.strength = tk.DoubleVar(value=0.03)
         self.smoothing = tk.DoubleVar(value=0.3)
         self.crf = tk.IntVar(value=18)
@@ -92,11 +94,18 @@ class App:
         cb.grid(row=0, column=1, sticky="w", padx=6)
         cb.bind("<<ComboboxSelected>>", lambda _e: self._refresh_preview())
 
-        ttk.Label(opts, text="Format:").grid(row=0, column=2, sticky="w")
-        fmt = ttk.Combobox(opts, textvariable=self.stereo_format, state="readonly", width=10,
+        ttk.Label(opts, text="Format:").grid(row=0, column=2, sticky="nw")
+        format_opts = ttk.Frame(opts)
+        format_opts.grid(row=0, column=3, sticky="w", padx=6)
+        fmt = ttk.Combobox(format_opts, textvariable=self.stereo_format, state="readonly", width=10,
                            values=["sbs", "tb", "anaglyph"])
-        fmt.grid(row=0, column=3, sticky="w", padx=6)
-        fmt.bind("<<ComboboxSelected>>", lambda _e: self._update_default_output())
+        fmt.pack(anchor="w")
+        fmt.bind("<<ComboboxSelected>>", lambda _e: self._on_format_changed())
+        self.tv_check = ttk.Checkbutton(
+            format_opts, text="3D TV mode (half-width SBS)", variable=self.tv_mode,
+            command=self._update_default_output, state="disabled")
+        self.tv_check.pack(anchor="w", pady=(4, 0))
+        self._on_format_changed()
 
         self._slider(opts, 1, 0, "3D strength:", self.strength, 0.005, 0.08, "%.3f",
                      on_release=self._refresh_preview)
@@ -132,8 +141,9 @@ class App:
         self.cancel_btn = ttk.Button(actions, text="Cancel", command=self._cancel.set,
                                      state="disabled")
         self.cancel_btn.pack(side="left", padx=4)
-        self.reveal_btn = ttk.Button(actions, text="Show in Finder",
-                                     command=lambda: subprocess.run(["open", "-R", self.output_path.get()]))
+        reveal_label = {"win32": "Show in File Explorer", "darwin": "Show in Finder"}.get(
+            sys.platform, "Open Containing Folder")
+        self.reveal_btn = ttk.Button(actions, text=reveal_label, command=self._reveal_output)
         self.reveal_btn.pack(side="left", padx=4)
         self.reveal_btn.pack_forget()
 
@@ -150,6 +160,22 @@ class App:
             scale.bind("<ButtonRelease-1>", lambda _e: on_release())
 
     # ---------- files ----------
+
+    def _reveal_output(self):
+        path = os.path.abspath(self.output_path.get())
+        if not os.path.isfile(path):
+            messagebox.showerror("Error", "The output video could not be found")
+            return
+        if sys.platform == "win32":
+            command = ["explorer.exe", f"/select,{path}"]
+        elif sys.platform == "darwin":
+            command = ["open", "-R", path]
+        else:
+            command = ["xdg-open", os.path.dirname(path)]
+        try:
+            subprocess.Popen(command)
+        except OSError as e:
+            messagebox.showerror("Error", f"Could not open the file manager: {e}")
 
     def browse_input(self):
         filename = filedialog.askopenfilename(
@@ -181,8 +207,16 @@ class App:
             return
         src = self.input_path.get()
         base = os.path.splitext(os.path.basename(src))[0]
+        layout = "hsbs" if self.tv_mode.get() else self.stereo_format.get()
         self.output_path.set(os.path.join(
-            os.path.dirname(src), f"{base}_stereo_{self.stereo_format.get()}.mp4"))
+            os.path.dirname(src), f"{base}_stereo_{layout}.mp4"))
+
+    def _on_format_changed(self):
+        is_sbs = self.stereo_format.get() == "sbs"
+        if not is_sbs:
+            self.tv_mode.set(False)
+        self.tv_check.config(state="normal" if is_sbs else "disabled")
+        self._update_default_output()
 
     # ---------- preview ----------
 
@@ -250,6 +284,9 @@ class App:
         if not self.output_path.get():
             messagebox.showerror("Error", "Please select an output file")
             return
+        if self.tv_mode.get() and self.spatial.get():
+            messagebox.showerror("Error", "3D TV mode cannot be combined with Apple spatial export")
+            return
         self._cancel.clear()
         self.convert_btn.config(state="disabled")
         self.cancel_btn.config(state="normal")
@@ -283,6 +320,7 @@ class App:
             pipeline.convert(
                 self.input_path.get(), output,
                 format=self.stereo_format.get(), eye_resolution=eye_res,
+                tv_mode=self.tv_mode.get(),
                 crf=self.crf.get(), preset=self.preset.get(),
                 progress_callback=lambda n, total: self._on_progress(n, total, t0),
                 should_stop=self._cancel.is_set,

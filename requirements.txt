@@ -1,4 +1,5 @@
 torch>=2.0
+triton-windows; sys_platform == "win32"
 opencv-python>=4.5
 numpy>=1.24
 transformers>=4.45

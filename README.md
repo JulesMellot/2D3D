@@ -12,6 +12,8 @@ For each frame: estimate depth with Depth Anything V2 → keep the original fram
 
 - **AI depth estimation** — Depth Anything V2 (small/base/large), GPU-accelerated (CUDA, Apple Silicon MPS); the `fast` profile runs on the Apple Neural Engine via Core ML on macOS (~3× faster than MPS)
 - **Output formats** — side-by-side (SBS), top-bottom, red-cyan anaglyph
+- **3D TV mode** — optional half-width SBS: each eye is squeezed horizontally for TV playback
+- **Stereo metadata** — SBS and top-bottom outputs include H.264 frame-packing flags plus MP4 `st3d` or MKV StereoMode metadata for player detection
 - **Apple spatial video** — optional MV-HEVC export for Vision Pro (`--spatial`)
 - **Quality preservation** — the left eye is the untouched source frame; audio is copied as-is
 - **Temporal smoothing** — reduces depth flicker between frames
@@ -41,6 +43,9 @@ brew install spatial
 # Basic conversion (side-by-side)
 python main.py input.mp4
 
+# Half-width SBS for a 3D TV (1920x1080 source -> 1920x1080 output)
+python main.py input.mp4 --3dtv
+
 # Choose output, format and depth model size
 python main.py input.mp4 -o output.mp4 -f tb -p precision
 
@@ -55,9 +60,10 @@ python main.py input.mp4 --spatial
 |---|---|---|
 | `-p, --profile` | `fast` | Depth model: `fast` (Small), `balanced` (Base), `precision` (Large) |
 | `-f, --format` | `sbs` | `sbs`, `tb`, or `anaglyph` |
+| `--3dtv` | off | Half-width SBS for 3D TVs; SBS only, incompatible with `--spatial` |
 | `--strength` | `0.03` | Max disparity as a fraction of frame width |
 | `--smoothing` | `0.3` | Temporal depth smoothing (0 = off) |
-| `--eye-resolution W H` | source | Output resolution per eye |
+| `--eye-resolution W H` | source | Resolution per eye before optional 3D TV squeezing |
 | `--crf` / `--preset` | `18` / `medium` | x264 encoding quality/speed |
 | `--spatial` | off | Also export MV-HEVC spatial video (SBS only, macOS) |
 
@@ -66,6 +72,19 @@ python main.py input.mp4 --spatial
 ```bash
 python main.py --gui
 ```
+
+Select **3D TV mode (half-width SBS)** with the SBS format. A 1920x1080
+source produces two 960x1080 views in one 1920x1080 frame; select SBS 3D
+playback on your TV to stretch each view back to full width. With a custom
+`--eye-resolution W H`, the combined output is W x H in this mode, except
+when W:H is narrower than 16:9: each eye receives centered black side bars
+before squeezing, widening the combined output to 16:9 (rounded up to an
+even width). For example, 1440x1080 becomes 1920x1080. Depth estimation and
+stereo warping still process the original image without the bars. Images
+at 16:9 or wider receive no padding.
+Dimensions are rounded down to even values for encoding. Default SBS output
+remains full width (3840x1080 for a 1920x1080 source). TV-mode filenames use
+`_stereo_hsbs.mp4`.
 
 ### Python API
 

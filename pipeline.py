@@ -4,6 +4,7 @@ Frames stream from OpenCV straight into an ffmpeg stdin pipe — no temp files,
 original fps and audio preserved.
 """
 
+import os
 import shutil
 import subprocess
 
@@ -29,12 +30,18 @@ class Pipeline:
         self._prev_depth = None
 
     def convert(self, input_path, output_path, format="sbs", eye_resolution=None,
-                crf=18, preset="medium", progress_callback=None, should_stop=None):
+                crf=18, preset="medium", progress_callback=None, should_stop=None,
+                tv_mode=False):
         """Convert a 2D video to stereo 3D. format: "sbs", "tb" or "anaglyph".
 
         progress_callback(n, total) is called every few frames; should_stop()
         returning True aborts cleanly (the partial output file is kept).
+        tv_mode squeezes each SBS eye to half width for 3D TVs. eye_resolution
+        describes the unsqueezed eye size (defaults to the source size).
+        Narrower eyes are pillarboxed to at least 16:9 before squeezing.
         """
+        if tv_mode and format != "sbs":
+            raise ValueError("3D TV mode requires SBS format")
         cap = cv2.VideoCapture(input_path)
         if not cap.isOpened():
             raise ValueError(f"Cannot open video: {input_path}")
@@ -45,8 +52,26 @@ class Pipeline:
 
         ew, eh = eye_resolution or (src_w, src_h)
         ew, eh = ew - ew % 2, eh - eh % 2  # x264 wants even dimensions
-        out_w, out_h = {"sbs": (ew * 2, eh), "tb": (ew, eh * 2), "anaglyph": (ew, eh)}[format]
+        if ew < 2 or eh < 2:
+            cap.release()
+            raise ValueError("Eye resolution must be at least 2 x 2")
+        eye_size = (ew, eh)
+        packed_w, packed_h = self._tv_eye_size(eye_size) if tv_mode else eye_size
+        out_w, out_h = {"sbs": (packed_w * 2, packed_h), "tb": (ew, eh * 2),
+                        "anaglyph": (ew, eh)}[format]
 
+        stereo_options = []
+        if format in ("sbs", "tb"):
+            # H.264 frame-packing SEI survives MP4 muxing; stereo_mode also
+            # sets Matroska's StereoMode when writing MKV. Left eye comes first.
+            packing, stereo_mode = {"sbs": (3, "left_right"), "tb": (4, "top_bottom")}[format]
+            stereo_options = ["-x264-params", f"frame-packing={packing}",
+                              "-metadata:s:v:0", f"stereo_mode={stereo_mode}"]
+
+        # MP4 needs stream-level stereo side data to write its st3d box.
+        # Pass through a Matroska pipe so the remuxer receives that metadata;
+        # H.264 SEI alone only describes decoded frames, not the MP4 track.
+        remux_mp4 = format in ("sbs", "tb") and os.fspath(output_path).lower().endswith(".mp4")
         encoder = subprocess.Popen(
             ["ffmpeg", "-y", "-loglevel", "error",
              "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{out_w}x{out_h}",
@@ -55,9 +80,27 @@ class Pipeline:
              "-map", "0:v", "-map", "1:a?",
              "-c:v", "libx264", "-preset", preset, "-crf", str(crf),
              "-pix_fmt", "yuv420p", "-c:a", "copy",
-             output_path],
+             *stereo_options,
+             *(["-f", "matroska", "pipe:1"] if remux_mp4 else [output_path])],
             stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE if remux_mp4 else None,
         )
+
+        muxer = None
+        if remux_mp4:
+            try:
+                muxer = subprocess.Popen(
+                    ["ffmpeg", "-y", "-loglevel", "error", "-i", "pipe:0",
+                     "-map", "0", "-c", "copy", "-strict", "unofficial", output_path],
+                    stdin=encoder.stdout)
+            except OSError:
+                encoder.stdin.close()
+                encoder.stdout.close()
+                encoder.terminate()
+                encoder.wait()
+                cap.release()
+                raise
+            encoder.stdout.close()
 
         self._prev_depth = None
         n = 0
@@ -67,7 +110,8 @@ class Pipeline:
                 if not ok:
                     break
                 left, right = self.process_frame(frame)
-                encoder.stdin.write(self._compose(left, right, format, (ew, eh)).tobytes())
+                encoder.stdin.write(self._compose(left, right, format, eye_size,
+                                                 tv_mode=tv_mode).tobytes())
                 n += 1
                 if progress_callback and n % 5 == 0:
                     progress_callback(n, total)
@@ -77,11 +121,15 @@ class Pipeline:
             cap.release()
             encoder.stdin.close()
             encoder.wait()
+            if muxer is not None:
+                muxer.wait()
 
         if n == 0:
             raise ValueError(f"No frames decoded from {input_path}")
         if encoder.returncode != 0:
             raise RuntimeError(f"ffmpeg exited with code {encoder.returncode}")
+        if muxer is not None and muxer.returncode != 0:
+            raise RuntimeError(f"ffmpeg MP4 remux exited with code {muxer.returncode}")
         return output_path
 
     def process_frame(self, frame):
@@ -100,10 +148,26 @@ class Pipeline:
         return frame, right
 
     @staticmethod
-    def _compose(left, right, format, eye_size):
+    def _tv_eye_size(eye_size):
+        width, height = eye_size
+        # Round the 16:9 canvas width up to an even pixel count so the
+        # combined half-SBS frame remains compatible with yuv420p.
+        canvas_width = max(width, 2 * ((height * 16 + 17) // 18))
+        return canvas_width // 2, height
+
+    @staticmethod
+    def _compose(left, right, format, eye_size, tv_mode=False):
         if (left.shape[1], left.shape[0]) != eye_size:
             left = cv2.resize(left, eye_size, interpolation=cv2.INTER_AREA)
             right = cv2.resize(right, eye_size, interpolation=cv2.INTER_AREA)
+        if tv_mode:
+            packed_size = Pipeline._tv_eye_size(eye_size)
+            padding = packed_size[0] * 2 - eye_size[0]
+            before, after = padding // 2, padding - padding // 2
+            left = cv2.copyMakeBorder(left, 0, 0, before, after, cv2.BORDER_CONSTANT, value=0)
+            right = cv2.copyMakeBorder(right, 0, 0, before, after, cv2.BORDER_CONSTANT, value=0)
+            left = cv2.resize(left, packed_size, interpolation=cv2.INTER_AREA)
+            right = cv2.resize(right, packed_size, interpolation=cv2.INTER_AREA)
         if format == "sbs":
             return np.ascontiguousarray(np.hstack((left, right)))
         if format == "tb":
